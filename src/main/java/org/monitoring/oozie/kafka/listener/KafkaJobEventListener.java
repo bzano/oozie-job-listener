@@ -1,5 +1,7 @@
 package org.monitoring.oozie.kafka.listener;
 
+import java.util.Optional;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.oozie.client.event.JobEvent;
 import org.apache.oozie.event.BundleJobEvent;
@@ -34,48 +36,51 @@ public class KafkaJobEventListener extends JobEventListener {
 	@Override
 	public void onWorkflowJobEvent(WorkflowJobEvent wje) {
 		LOGGER.info("onWorkflowJobEvent kafka");
-		MonitoringEvent event = jobEventToMonitoringEvent(wje);
-		kafkaProducer.sendEvent(event);
+		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(wje);
+		event.ifPresent(kafkaProducer::sendEvent);
 	}
 
-	private MonitoringEvent jobEventToMonitoringEvent(JobEvent jobEvent) {
-		MonitoringEvent event = new MonitoringEvent();
-		event.setJobName(jobEvent.getAppName());
-		event.setSeverity(INFO);
-		event.setTsStart(jobEvent.getStartTime().getTime());
-		event.setTsEnd(jobEvent.getEndTime().getTime());
-		event.setTsDuration(event.getTsEnd() - event.getTsStart());
-		event.setUser(jobEvent.getUser());
-		event.setJobType(jobEvent.getAppType().name());
-		event.setStatus(jobEvent.getEventStatus().name());
-		return event;
+	private Optional<MonitoringEvent> jobEventToMonitoringEvent(JobEvent jobEvent) {
+		if(jobEvent.getEndTime() != null) {
+			MonitoringEvent event = new MonitoringEvent();
+			event.setJobName(jobEvent.getAppName());
+			event.setSeverity(INFO);
+			event.setTsStart(jobEvent.getStartTime().getTime());
+			event.setTsEnd(jobEvent.getEndTime().getTime());
+			event.setTsDuration(event.getTsEnd() - event.getTsStart());
+			event.setUser(jobEvent.getUser());
+			event.setJobType(jobEvent.getAppType().name());
+			event.setStatus(jobEvent.getEventStatus().name());
+			return Optional.of(event);	
+		}
+		return Optional.empty();
 	}
 
 	@Override
 	public void onWorkflowActionEvent(WorkflowActionEvent wae) {
 		LOGGER.info("onWorkflowActionEvent kafka");
-		MonitoringEvent event = jobEventToMonitoringEvent(wae);
-		kafkaProducer.sendEvent(event);
+		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(wae);
+		event.ifPresent(kafkaProducer::sendEvent);
 	}
 
 	@Override
 	public void onCoordinatorJobEvent(CoordinatorJobEvent cje) {
 		LOGGER.info("onCoordinatorJobEvent kafka");
-		MonitoringEvent event = jobEventToMonitoringEvent(cje);
-		kafkaProducer.sendEvent(event);
+		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(cje);
+		event.ifPresent(kafkaProducer::sendEvent);
 	}
 
 	@Override
 	public void onCoordinatorActionEvent(CoordinatorActionEvent cae) {
 		LOGGER.info("onCoordinatorActionEvent kafka");	
-		MonitoringEvent event = jobEventToMonitoringEvent(cae);
-		kafkaProducer.sendEvent(event);
+		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(cae);
+		event.ifPresent(kafkaProducer::sendEvent);
 	}
 
 	@Override
 	public void onBundleJobEvent(BundleJobEvent bje) {
 		LOGGER.info("onBundleJobEvent kafka");	
-		MonitoringEvent event = jobEventToMonitoringEvent(bje);
-		kafkaProducer.sendEvent(event);
+		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(bje);
+		event.ifPresent(kafkaProducer::sendEvent);
 	}
 }

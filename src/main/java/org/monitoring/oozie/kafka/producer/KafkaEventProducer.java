@@ -19,6 +19,8 @@ import com.google.gson.Gson;
 public class KafkaEventProducer {
 	private static final XLog LOGGER = XLog.getLog(KafkaEventProducer.class);
 	private static final Gson MAPPER = new Gson();
+	
+	public static final String KAFKA_CONFIG_PREFIX = "job.listener.kafka.config.";
 
 	private KafkaProducer<String, String> producer;
 	private FlowRouter flowRouter;
