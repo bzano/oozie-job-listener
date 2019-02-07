@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.antlr.stringtemplate.StringTemplate;
 import org.apache.oozie.util.XLog;
@@ -14,22 +15,25 @@ import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
 import org.apache.zookeeper.ZooKeeper;
 import org.fusesource.hawtbuf.ByteArrayInputStream;
-import org.monitoring.oozie.kafka.event.MonitoringEvent;
 
-public class FlowRouter {
-	private static final XLog LOGGER = XLog.getLog(FlowRouter.class);
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+
+public class FlowConfig {
+	private static final XLog LOGGER = XLog.getLog(FlowConfig.class);
 	private static final int TIME_OUT = 5 * 1000;
-	private static final String ENTITY = "entity";
-	private static final String TRIGRAM = "trigram";
-	private static final String EMPTY_REPLACE = "_";
-	private static final String PATH_TEMPLATE = "/project/$" + ENTITY + "$/apps/$" + TRIGRAM + "$/monitoring";
-	private static final String TOPIC_KEY = "topic";
+	private static final String JOB_NAME = "job_name";
+	private static final Cache<String, Properties> CACHE = CacheBuilder.newBuilder()
+			.expireAfterAccess(1, TimeUnit.HOURS)
+			.build();
 	private ZooKeeper zookeeper;
 	
+	private String pathTemplate;
 	private String zookeeperServer;
 	
-	public FlowRouter(String zookeeperServer) {
+	public FlowConfig(String zookeeperServer, String zkPathPrefix) {
 		this.zookeeperServer = zookeeperServer;
+		pathTemplate = zkPathPrefix + "/$" + JOB_NAME + "$";
 		if(this.zookeeperServer != null) {
 			initZooKeeper();
 		}
@@ -59,15 +63,21 @@ public class FlowRouter {
 		LOGGER.info("Zookeeper client Created");
 	}
 	
-	public Optional<Properties> getEventConfiguration(MonitoringEvent event) {
-		String path = getConfigurationPath(event);
-		return Optional.ofNullable(zookeeper)
-			.flatMap(zk -> getDataFromZk(zk, path))
-			.map(ByteArrayInputStream::new)
-			.flatMap(this::loadProperties);
+	public synchronized Optional<Properties> getEventConfiguration(String jobName) {
+		Properties props = CACHE.getIfPresent(jobName);
+		Optional<Properties> properties = Optional.ofNullable(Optional.ofNullable(props)
+			.orElseGet(() -> {
+				Optional<String> path = getConfigurationPath(jobName);
+				return Optional.ofNullable(zookeeper)
+					.flatMap(zk -> path.flatMap(p -> getDataFromZk(zk, p)))
+					.map(ByteArrayInputStream::new)
+					.flatMap(stream -> loadProperties(jobName, stream)).orElse(null);
+			}));
+		properties.ifPresent(p -> CACHE.put(jobName, p));
+		return properties;
 	}
 	
-	private Optional<Properties> loadProperties(InputStream stream){
+	private Optional<Properties> loadProperties(String jobName, InputStream stream){
 		try {
 			Properties props = new Properties();
 			props.load(stream);
@@ -82,21 +92,17 @@ public class FlowRouter {
 		try {
 			return Optional.of(zk.getData(path, null, null));
 		} catch (KeeperException | InterruptedException e) {
-			LOGGER.error(e);
+			LOGGER.error("Error while getting data from ZK (" + path + ")", e);
 			return Optional.empty();
 		}
 	}
-	
-	public Optional<String> getEventTopic(MonitoringEvent event) {
-		return getEventConfiguration(event)
-				.map(props -> props.getProperty(TOPIC_KEY));
-	}
 
-	private String getConfigurationPath(MonitoringEvent event) {
-		StringTemplate pathTemplate = new StringTemplate(PATH_TEMPLATE);
-		pathTemplate.setAttribute(ENTITY, Optional.ofNullable(event.getEntity()).orElse(EMPTY_REPLACE));
-		pathTemplate.setAttribute(TRIGRAM, Optional.ofNullable(event.getTrigram()).orElse(EMPTY_REPLACE));
-		String path = pathTemplate.toString();
-		return path;
+	private Optional<String> getConfigurationPath(String jobName) {
+		return Optional.ofNullable(jobName)
+			.map(jn -> {
+				StringTemplate template = new StringTemplate(pathTemplate);
+				template.setAttribute(JOB_NAME, jn);
+				return template.toString();
+			});
 	}
 }

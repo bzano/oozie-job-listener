@@ -24,8 +24,9 @@ public class KafkaJobEventListener extends JobEventListener {
 	public void init(Configuration conf) {
 		String kafkaServer = conf.get("oozie.job.listener.kafka.bootstrap.servers");
 		String zookeeperServer = conf.get("oozie.job.listener.zookeeper");
-		LOGGER.info("init kafka job listener (" + kafkaServer + " / " + zookeeperServer + ")");
-		kafkaProducer = new KafkaEventProducer(kafkaServer, zookeeperServer);
+		String zkPathPrefix = conf.get("oozie.job.listener.zookeeper.path.prefix");
+		LOGGER.info("init kafka job listener (" + kafkaServer + " / " + zookeeperServer + " / " + zkPathPrefix + ")");
+		kafkaProducer = new KafkaEventProducer(kafkaServer, zookeeperServer, zkPathPrefix);
 	}
 
 	@Override

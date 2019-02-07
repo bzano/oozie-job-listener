@@ -23,17 +23,19 @@ import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.monitoring.oozie.kafka.event.MonitoringEvent;
+import org.monitoring.oozie.kafka.producer.KafkaEventProducer;
 
 import com.salesforce.kafka.test.junit4.SharedZookeeperTestResource;
 
-public class FlowRouterTest {
+public class FlowConfigTest {
 	@ClassRule
 	public static final SharedZookeeperTestResource ZOOKEEPER = new SharedZookeeperTestResource();
 	
 	private static final String TOPIC_NAME = "tpc-bsy";
-	private static final String TOPIC_KEY = "topic";
+	private static final String ZK_PATH_PREFIX = "/project/bddf/apps/bsy/monitoring";
+	private static final String JOB_NAME = "dmp_bad_krux";
 	
-	private FlowRouter flowRouter;
+	private FlowConfig flowRouter;
 	
 	@BeforeClass
 	public static void classSetup() throws IOException, InterruptedException, KeeperException {
@@ -42,53 +44,27 @@ public class FlowRouterTest {
 	
 	@Before
 	public void setup() throws IOException, InterruptedException {
-		flowRouter = new FlowRouter(ZOOKEEPER.getZookeeperConnectString());
+		flowRouter = new FlowConfig(ZOOKEEPER.getZookeeperConnectString(), ZK_PATH_PREFIX);
 	}
 
 	@Test
 	public void getEventConfiguration_chould_return_properties_with_topic_name() {
 		// GIVEN
 		MonitoringEvent event = new MonitoringEvent();
-		event.setEntity("bddf");
-		event.setTrigram("bsy");
+		event.setJobName(JOB_NAME);
 		// WHEN
-		Optional<Properties> config = flowRouter.getEventConfiguration(event);
+		Optional<Properties> config = flowRouter.getEventConfiguration(event.getJobName());
 		// THEN
-		assertThat(config.get()).containsEntry(TOPIC_KEY, TOPIC_NAME);
+		assertThat(config.get()).containsEntry(KafkaEventProducer.KAFKA_TOPIC_CONF, TOPIC_NAME);
 	}
-	
-	@Test
-	public void getEventTopic_chould_return_topic_name() {
-		// GIVEN
-		MonitoringEvent event = new MonitoringEvent();
-		event.setEntity("bddf");
-		event.setTrigram("bsy");
-		// WHEN
-		Optional<String> config = flowRouter.getEventTopic(event);
-		// THEN
-		assertThat(config).get().isEqualTo(TOPIC_NAME);
-	}
-	
-	@Test
-	public void getEventTopic_chould_return_empty_when_project_is_not_registred() {
-		// GIVEN
-		MonitoringEvent event = new MonitoringEvent();
-		event.setEntity("bddf");
-		event.setTrigram("aaa");
-		// WHEN
-		Optional<String> config = flowRouter.getEventTopic(event);
-		// THEN
-		assertThat(config).isEmpty();
-	}
-	
+
 	@Test
 	public void getEventConfiguration_chould_return_empty_when_project_is_not_registred() {
 		// GIVEN
 		MonitoringEvent event = new MonitoringEvent();
-		event.setEntity("bddf");
-		event.setTrigram("aaa");
+		event.setJobName("no_job_name");
 		// WHEN
-		Optional<Properties> config = flowRouter.getEventConfiguration(event);
+		Optional<Properties> config = flowRouter.getEventConfiguration(event.getJobName());
 		// THEN
 		assertThat(config).isEmpty();
 	}
@@ -96,7 +72,7 @@ public class FlowRouterTest {
 	private static byte[] createConfig() throws IOException {
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 		Properties props = new Properties();
-		props.setProperty(TOPIC_KEY, TOPIC_NAME);
+		props.setProperty(KafkaEventProducer.KAFKA_TOPIC_CONF, TOPIC_NAME);
 		props.store(outputStream, null);
 		byte[] data = outputStream.toByteArray();
 		return data;
@@ -128,7 +104,9 @@ public class FlowRouterTest {
 		pathBuilder.append("/bsy");
 		Op op4 = Op.create(pathBuilder.toString(), StringUtils.EMPTY.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		pathBuilder.append("/monitoring");
-		Op op5 = Op.create(pathBuilder.toString(), data, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-		zookeeper.multi(Arrays.asList(op1, op2, op3, op4, op5));
+		Op op5 = Op.create(pathBuilder.toString(), StringUtils.EMPTY.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		pathBuilder.append("/" + JOB_NAME);
+		Op op6 = Op.create(pathBuilder.toString(), data, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		zookeeper.multi(Arrays.asList(op1, op2, op3, op4, op5, op6));
 	}
 }

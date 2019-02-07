@@ -1,10 +1,17 @@
 package org.monitoring.oozie.kafka.producer;
 
+import java.lang.reflect.Field;
+import java.util.Arrays;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -12,48 +19,76 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.oozie.util.XLog;
 import org.monitoring.oozie.kafka.event.MonitoringEvent;
-import org.monitoring.oozie.zookeeper.FlowRouter;
+import org.monitoring.oozie.zookeeper.FlowConfig;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.google.gson.Gson;
+import com.google.gson.annotations.SerializedName;
 
 public class KafkaEventProducer {
 	private static final XLog LOGGER = XLog.getLog(KafkaEventProducer.class);
 	private static final Gson MAPPER = new Gson();
 	
 	public static final String KAFKA_CONFIG_PREFIX = "job.listener.kafka.config.";
+	public static final String EVENT_CONFIG_PREFIX = "job.listener.event.config.";
+	public static final String KAFKA_TOPIC_CONF = "job.listener.kafka.topic";
+	
+	private static final Cache<String, KafkaProducer<String, String>> CACHE = CacheBuilder.newBuilder()
+			.expireAfterAccess(1, TimeUnit.HOURS)
+			.build();
 
-	private KafkaProducer<String, String> producer;
-	private FlowRouter flowRouter;
+	private FlowConfig flowConfig;
+	private String bootstrapServers;
 
-	public KafkaEventProducer(String bootstrapServer, String zookeeperServer) {
-		initKafkaProducer(bootstrapServer);
-		initRouter(zookeeperServer);
+	public KafkaEventProducer(String bootstrapServers, String zookeeperServer, String zkPathPrefix) {
+		this.bootstrapServers = bootstrapServers;
+		initRouter(zookeeperServer, zkPathPrefix);
 	}
 
-	private void initRouter(String zookeeperServer) {
-		flowRouter = new FlowRouter(zookeeperServer);
+	private void initRouter(String zookeeperServer, String zkPathPrefix) {
+		flowConfig = new FlowConfig(zookeeperServer, zkPathPrefix);
 	}
 
-	private void initKafkaProducer(String bootstrapServer) {
-		LOGGER.info("Init kafka producer");
-		Optional<Properties> props = Optional.ofNullable(bootstrapServer)
-			.map(bs -> {
-				Properties properties = new Properties();
-				properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bs);
-				properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-				properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-				return properties;
+	private synchronized Optional<KafkaProducer<String, String>> getKafkaProducer(String jobName) {
+		KafkaProducer<String, String> producer = CACHE.getIfPresent(jobName);
+		return Optional.ofNullable(Optional.ofNullable(producer)
+			.orElseGet(() -> {
+				LOGGER.info("Init kafka producer");
+				Optional<Properties> props = Optional.ofNullable(bootstrapServers)
+					.map(bs -> {
+						Properties properties = createJobKafkaProducerProps(jobName).orElseGet(Properties::new);
+						properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bs);
+						properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+						properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+						return properties;
+					});
+				return props.map(p -> {
+					KafkaProducer<String, String> newProducer = new KafkaProducer<String, String>(p);
+					CACHE.put(jobName, newProducer);
+					return newProducer;
+				}).orElse(null);
+			}));
+	}
+	
+	public Optional<Properties> createJobKafkaProducerProps(String jobName) {
+		Optional<Properties> jobProps = flowConfig.getEventConfiguration(jobName);
+		return jobProps.map(p -> p.keySet().stream().map(Object::toString))
+			.map(propsStream -> propsStream.filter(prop -> prop.indexOf(KAFKA_CONFIG_PREFIX) == 0))
+			.map(kafkaPropsStream -> kafkaPropsStream.collect(Collectors.toMap(
+					propKey -> propKey.toString().replaceAll(KAFKA_CONFIG_PREFIX, StringUtils.EMPTY), 
+					propKey -> jobProps.get().get(propKey))))
+			.map(map -> {
+				Properties p = new Properties();
+				p.putAll(map);
+				return p;
 			});
-		producer = props.map(p -> new KafkaProducer<String, String>(p)).orElse(null);
-		LOGGER.info("Kafka event producer created");
 	}
 
 	public void sendEvent(MonitoringEvent event) {
-		final String jsonEvent = MAPPER.toJson(event);
-		
-		flowRouter.getEventTopic(event)
-			.map(topic -> new ProducerRecord<String, String>(topic, jsonEvent))
-			.flatMap(this::produceToKafka)
+		flowConfig.getEventConfiguration(event.getJobName())
+			.map(props -> eventToRecord(event, props))
+			.flatMap(record -> produceToKafka(event.getJobName(), record))
 			.flatMap(this::getMetadata)
 			.ifPresent(meta -> {
 				if (LOGGER.isDebugEnabled()) {
@@ -61,10 +96,51 @@ public class KafkaEventProducer {
 				}
 			});
 	}
+
+	private ProducerRecord<String, String> eventToRecord(MonitoringEvent event, Properties props) {
+		String topic = props.getProperty(KAFKA_TOPIC_CONF);
+		updateEventConfig(event, props);
+		String jsonEvent = MAPPER.toJson(event);
+		return new ProducerRecord<String, String>(topic, jsonEvent);
+	}
 	
-	private Optional<Future<RecordMetadata>> produceToKafka(ProducerRecord<String, String> record){
-		return Optional.ofNullable(producer)
-			.map(p -> p.send(record));
+	private void updateEventConfig(MonitoringEvent event, Properties jobConfig) {
+		Map<String, Object> eventProps = jobConfig.keySet().stream().map(Object::toString)
+			.filter(key -> key.indexOf(EVENT_CONFIG_PREFIX) == 0)
+			.collect(Collectors.toMap(
+					key -> key.toString().toLowerCase().replace(EVENT_CONFIG_PREFIX, StringUtils.EMPTY), 
+					key -> jobConfig.get(key)));
+		
+		Arrays.stream(event.getClass().getDeclaredFields())
+			.map(f -> Pair.of(f, getFieldName(f)))
+			.filter(t -> eventProps.get(t.getRight()) != null)
+			.map(t -> Pair.of(t.getLeft(), eventProps.get(t.getRight())))
+			.forEach(t -> {
+				Object value = t.getRight();
+				Field field = t.getLeft();
+				populateField(event, field, value);
+			});
+	}
+
+	private void populateField(MonitoringEvent event, Field field, Object value) {
+		field.setAccessible(true);
+		try {
+			field.set(event, value);
+		} catch (IllegalArgumentException | IllegalAccessException e) {
+			LOGGER.error(e);
+		}
+		field.setAccessible(false);
+	}
+	
+	private String getFieldName(Field field) {
+		return Arrays.stream(field.getDeclaredAnnotationsByType(SerializedName.class))
+			.findFirst().map(SerializedName::value)
+			.map(String::toLowerCase)
+			.orElse(field.getName());
+	}
+	
+	private Optional<Future<RecordMetadata>> produceToKafka(String jobName, ProducerRecord<String, String> record){
+		return getKafkaProducer(jobName).map(p -> p.send(record));
 	}
 	
 	private Optional<RecordMetadata> getMetadata(Future<RecordMetadata> future){
