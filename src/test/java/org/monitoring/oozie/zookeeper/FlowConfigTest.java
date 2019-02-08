@@ -32,6 +32,9 @@ public class FlowConfigTest {
 	public static final SharedZookeeperTestResource ZOOKEEPER = new SharedZookeeperTestResource();
 	
 	private static final String TOPIC_NAME = "tpc-bsy";
+	private static final String APP_MON_KRUX = "krux";
+	private static final String TRIGRAM_DGL = "dgl";
+	private static final String IRT_KRUX = "A0384";
 	private static final String ZK_PATH_PREFIX = "/project/bddf/apps/bsy/monitoring";
 	private static final String JOB_NAME = "dmp_bad_krux";
 	
@@ -73,6 +76,13 @@ public class FlowConfigTest {
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 		Properties props = new Properties();
 		props.setProperty(KafkaEventProducer.KAFKA_TOPIC_CONF, TOPIC_NAME);
+		props.setProperty(KafkaEventProducer.KAFKA_CONFIG_PREFIX + "security.protocol", "PLAINTEXT");
+		props.setProperty(KafkaEventProducer.KAFKA_CONFIG_PREFIX + "client.id", "CLIENT1");
+		
+		props.setProperty(KafkaEventProducer.EVENT_CONFIG_PREFIX + "app_mon", APP_MON_KRUX);
+		props.setProperty(KafkaEventProducer.EVENT_CONFIG_PREFIX + "trigram", TRIGRAM_DGL);
+		props.setProperty(KafkaEventProducer.EVENT_CONFIG_PREFIX + "irt", IRT_KRUX);
+		
 		props.store(outputStream, null);
 		byte[] data = outputStream.toByteArray();
 		return data;

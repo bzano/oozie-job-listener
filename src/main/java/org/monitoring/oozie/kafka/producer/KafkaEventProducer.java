@@ -43,10 +43,10 @@ public class KafkaEventProducer {
 
 	public KafkaEventProducer(String bootstrapServers, String zookeeperServer, String zkPathPrefix) {
 		this.bootstrapServers = bootstrapServers;
-		initRouter(zookeeperServer, zkPathPrefix);
+		initFlowConfig(zookeeperServer, zkPathPrefix);
 	}
 
-	private void initRouter(String zookeeperServer, String zkPathPrefix) {
+	private void initFlowConfig(String zookeeperServer, String zkPathPrefix) {
 		flowConfig = new FlowConfig(zookeeperServer, zkPathPrefix);
 	}
 
