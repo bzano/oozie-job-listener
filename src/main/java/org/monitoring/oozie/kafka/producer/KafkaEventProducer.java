@@ -1,7 +1,9 @@
 package org.monitoring.oozie.kafka.producer;
 
 import java.lang.reflect.Field;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
@@ -29,6 +31,7 @@ import com.google.gson.annotations.SerializedName;
 public class KafkaEventProducer {
 	private static final XLog LOGGER = XLog.getLog(KafkaEventProducer.class);
 	private static final Gson MAPPER = new Gson();
+	private static final SimpleDateFormat ISO_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
 	
 	public static final String KAFKA_CONFIG_PREFIX = "job.listener.kafka.config.";
 	public static final String EVENT_CONFIG_PREFIX = "job.listener.event.config.";
@@ -99,12 +102,18 @@ public class KafkaEventProducer {
 
 	private ProducerRecord<String, String> eventToRecord(MonitoringEvent event, Properties props) {
 		String topic = props.getProperty(KAFKA_TOPIC_CONF);
-		updateEventConfig(event, props);
-		String jsonEvent = MAPPER.toJson(event);
+		MonitoringEvent newEvent = updateEventConfig(event, props);
+		
+		Map<String, Object> log = new HashMap<>();
+		
+		log.put("message", newEvent);
+		log.put("date", ISO_DATE_FORMAT.format(System.currentTimeMillis()));
+		
+		String jsonEvent = MAPPER.toJson(log);
 		return new ProducerRecord<String, String>(topic, jsonEvent);
 	}
 	
-	private void updateEventConfig(MonitoringEvent event, Properties jobConfig) {
+	private MonitoringEvent updateEventConfig(MonitoringEvent event, Properties jobConfig) {
 		Map<String, Object> eventProps = jobConfig.keySet().stream().map(Object::toString)
 			.filter(key -> key.indexOf(EVENT_CONFIG_PREFIX) == 0)
 			.collect(Collectors.toMap(
@@ -120,6 +129,7 @@ public class KafkaEventProducer {
 				Field field = t.getLeft();
 				populateField(event, field, value);
 			});
+		return event;
 	}
 
 	private void populateField(MonitoringEvent event, Field field, Object value) {

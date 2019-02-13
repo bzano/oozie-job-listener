@@ -18,7 +18,6 @@ import org.fusesource.hawtbuf.ByteArrayInputStream;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
-import com.google.gson.Gson;
 
 public class FlowConfig {
 	private static final XLog LOGGER = XLog.getLog(FlowConfig.class);
@@ -55,7 +54,10 @@ public class FlowConfig {
 						}
 					});
 					boolean zkInitiated = connectionLatch.await(TIME_OUT, TimeUnit.MILLISECONDS);
-					return zkInitiated ? zk : null;
+					if(!zkInitiated) {
+						throw new IOException("Zk Init failed");
+					}
+					return zk;
 				} catch (IOException | InterruptedException e) {
 					LOGGER.error(e);
 					return null;
@@ -69,7 +71,6 @@ public class FlowConfig {
 		Optional<Properties> properties = Optional.ofNullable(Optional.ofNullable(props)
 			.orElseGet(() -> {
 				Optional<String> path = getConfigurationPath(jobName);
-				path.ifPresent(p -> System.out.println("Hello " + p));
 				return Optional.ofNullable(zookeeper)
 					.flatMap(zk -> path.flatMap(p -> getDataFromZk(zk, p)))
 					.map(ByteArrayInputStream::new)
@@ -83,7 +84,6 @@ public class FlowConfig {
 		try {
 			Properties props = new Properties();
 			props.load(stream);
-			System.out.println("Hello " + new Gson().toJson(props));
 			return Optional.of(props);
 		} catch (IOException e) {
 			LOGGER.error(e);

@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
@@ -80,14 +82,19 @@ public class KafkaEventProducerTest {
 	}
 
 	private Optional<MonitoringEvent> firstMonitoringEvent() {
-		return firstJsonRecord().map(r -> MAPPER.fromJson(r, MonitoringEvent.class));
+		return KAFKA.getKafkaTestUtils().consumeAllRecordsFromTopic(TOPIC_NAME, StringDeserializer.class, StringDeserializer.class)
+				.stream()
+				.findFirst()
+				.map(record -> record.value())
+				.map(value -> MAPPER.fromJson(value, Map.class))
+				.map(m -> m.get("message"))
+				.filter(Objects::nonNull)
+				.map(msg -> MAPPER.toJson(msg))
+				.map(str -> MAPPER.fromJson(str, MonitoringEvent.class));
 	}
 	
 	private Optional<String> firstJsonRecord() {
-		return KAFKA.getKafkaTestUtils().consumeAllRecordsFromTopic(TOPIC_NAME, StringDeserializer.class, StringDeserializer.class)
-			.stream()
-			.findFirst()
-			.map(record -> record.value());
+		return firstMonitoringEvent().map(evt -> MAPPER.toJson(evt));
 	}
 	
 	private static byte[] createConfig() throws IOException {
