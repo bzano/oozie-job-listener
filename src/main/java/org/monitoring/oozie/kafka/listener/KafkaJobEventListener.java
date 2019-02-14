@@ -4,6 +4,7 @@ import java.util.Optional;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.oozie.client.event.JobEvent;
+import org.apache.oozie.client.event.JobEvent.EventStatus;
 import org.apache.oozie.event.BundleJobEvent;
 import org.apache.oozie.event.CoordinatorActionEvent;
 import org.apache.oozie.event.CoordinatorJobEvent;
@@ -17,9 +18,10 @@ import org.monitoring.oozie.kafka.producer.KafkaEventProducer;
 public class KafkaJobEventListener extends JobEventListener {
 	private static final XLog LOGGER = XLog.getLog(KafkaJobEventListener.class);
 	private static final String INFO = "INFO";
+	private static final String ERROR = "ERROR";
 
 	private KafkaEventProducer kafkaProducer;
-	
+
 	@Override
 	public void init(Configuration conf) {
 		String kafkaServer = conf.get("oozie.job.listener.kafka.bootstrap.servers");
@@ -42,19 +44,28 @@ public class KafkaJobEventListener extends JobEventListener {
 	}
 
 	private Optional<MonitoringEvent> jobEventToMonitoringEvent(JobEvent jobEvent) {
-		if(jobEvent.getEndTime() != null) {
-			MonitoringEvent event = new MonitoringEvent();
-			event.setJobName(jobEvent.getAppName());
-			event.setSeverity(INFO);
-			event.setTsStart(jobEvent.getStartTime().getTime());
-			event.setTsEnd(jobEvent.getEndTime().getTime());
-			event.setTsDuration(event.getTsEnd() - event.getTsStart());
-			event.setUser(jobEvent.getUser());
-			event.setJobType(jobEvent.getAppType().name());
-			event.setStatus(jobEvent.getEventStatus().name());
-			return Optional.of(event);	
+		if (jobEvent.getEndTime() != null) {
+			try {
+				MonitoringEvent event = new MonitoringEvent();
+				event.setJobName(jobEvent.getAppName());
+				String severity = getJobSeverity(jobEvent);
+				event.setSeverity(severity);
+				event.setTsStart(jobEvent.getStartTime().getTime());
+				event.setTsEnd(jobEvent.getEndTime().getTime());
+				event.setTsDuration(event.getTsEnd() - event.getTsStart());
+				event.setUser(jobEvent.getUser());
+				event.setJobType(jobEvent.getAppType().name());
+				event.setStatus(jobEvent.getEventStatus().name());
+				return Optional.of(event);
+			} catch (Throwable th) {
+				LOGGER.error("Cound not generate event of " + jobEvent.toString());
+			}
 		}
 		return Optional.empty();
+	}
+
+	private String getJobSeverity(JobEvent jobEvent) {
+		return Optional.of(jobEvent.getEventStatus()).filter(EventStatus.FAILURE::equals).map(st -> ERROR).orElse(INFO);
 	}
 
 	@Override
@@ -73,14 +84,14 @@ public class KafkaJobEventListener extends JobEventListener {
 
 	@Override
 	public void onCoordinatorActionEvent(CoordinatorActionEvent cae) {
-		LOGGER.info("onCoordinatorActionEvent kafka");	
+		LOGGER.info("onCoordinatorActionEvent kafka");
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(cae);
 		event.ifPresent(kafkaProducer::sendEvent);
 	}
 
 	@Override
 	public void onBundleJobEvent(BundleJobEvent bje) {
-		LOGGER.info("onBundleJobEvent kafka");	
+		LOGGER.info("onBundleJobEvent kafka");
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(bje);
 		event.ifPresent(kafkaProducer::sendEvent);
 	}
