@@ -97,7 +97,7 @@ public class KafkaEventProducer {
 	}
 
 	public void sendEvent(MonitoringEvent event) {
-		flowConfig.getEventConfiguration(event.getJobName()).map(props -> eventToRecord(event, props))
+		flowConfig.getEventConfiguration(event.getJobName()).flatMap(props -> eventToRecord(event, props))
 				.flatMap(record -> produceToKafka(event.getJobName(), record)).flatMap(this::getMetadata)
 				.ifPresent(meta -> {
 					if (LOGGER.isDebugEnabled()) {
@@ -106,17 +106,21 @@ public class KafkaEventProducer {
 				});
 	}
 
-	private ProducerRecord<String, String> eventToRecord(MonitoringEvent event, Properties props) {
+	private Optional<ProducerRecord<String, String>> eventToRecord(MonitoringEvent event, Properties props) {
 		String topic = props.getProperty(KAFKA_TOPIC_CONF);
-		MonitoringEvent newEvent = updateEventConfig(event, props);
+		if(topic != null) {
+			MonitoringEvent newEvent = updateEventConfig(event, props);
 
-		Map<String, Object> log = new HashMap<>();
+			Map<String, Object> log = new HashMap<>();
 
-		log.put("message", newEvent);
-		log.put("date", ISO_DATE_FORMAT.format(System.currentTimeMillis()));
+			log.put("message", newEvent);
+			log.put("date", ISO_DATE_FORMAT.format(System.currentTimeMillis()));
 
-		String jsonEvent = MAPPER.toJson(log);
-		return new ProducerRecord<String, String>(topic, jsonEvent);
+			String jsonEvent = MAPPER.toJson(log);
+			return Optional.of(new ProducerRecord<String, String>(topic, jsonEvent));
+		}
+		LOGGER.warn("No topic is defined for job (" + event.getJobName() + ") " + props.toString());
+		return Optional.empty();
 	}
 
 	private MonitoringEvent updateEventConfig(MonitoringEvent event, Properties jobConfig) {

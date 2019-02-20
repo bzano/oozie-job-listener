@@ -8,10 +8,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.antlr.stringtemplate.StringTemplate;
+import org.apache.commons.lang.StringUtils;
 import org.apache.oozie.util.XLog;
 import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.WatchedEvent;
-import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
 import org.apache.zookeeper.ZooKeeper;
 import org.fusesource.hawtbuf.ByteArrayInputStream;
@@ -40,17 +39,14 @@ public class FlowConfig {
 	}
 	
 	private Optional<ZooKeeper> initZooKeeperClient() {
-		LOGGER.info("Init zookeeper client");
 		return Optional.ofNullable(zookeeperServer)
 			.map(srv -> {
+				LOGGER.info("Init zookeeper client (" + zookeeperServer + ")");
 				final CountDownLatch connectionLatch = new CountDownLatch(1);
 				try {
-					ZooKeeper zk = new ZooKeeper(srv, TIME_OUT, new Watcher() {
-						@Override
-						public void process(WatchedEvent event) {
-							if(event.getState() == KeeperState.SyncConnected) {
-								connectionLatch.countDown();
-							}
+					ZooKeeper zk = new ZooKeeper(srv, TIME_OUT, event -> {
+						if(event.getState() == KeeperState.SyncConnected) {
+							connectionLatch.countDown();
 						}
 					});
 					boolean zkInitiated = connectionLatch.await(TIME_OUT, TimeUnit.MILLISECONDS);
@@ -76,10 +72,15 @@ public class FlowConfig {
 	}
 	
 	private Optional<Properties> getPropertiesByPath(String path){
-		return initZooKeeperClient()
+		LOGGER.info("Get properties from (" + path + ")");
+		Optional<Properties>  props = initZooKeeperClient()
 			.flatMap(zk -> getDataFromZk(zk, path))
 			.map(ByteArrayInputStream::new)
-			.flatMap(stream -> loadProperties(stream));
+			.flatMap(this::loadProperties);
+		
+		props.ifPresent(p -> LOGGER.info(path + " loaded"));
+		
+		return props;
 	}
 	
 	private Optional<Properties> loadProperties(InputStream stream){
@@ -88,7 +89,7 @@ public class FlowConfig {
 			props.load(stream);
 			return Optional.of(props);
 		} catch (IOException e) {
-			LOGGER.error(e);
+			LOGGER.error("Failed to load properties", e);
 			return Optional.empty();
 		}
 	}
@@ -104,10 +105,11 @@ public class FlowConfig {
 
 	private Optional<String> getConfigurationPath(String jobName) {
 		return Optional.ofNullable(jobName)
+			.filter(StringUtils::isNotEmpty)
 			.map(jn -> {
 				StringTemplate template = new StringTemplate(pathTemplate);
 				template.setAttribute(JOB_NAME, jn);
-				return template.toString();
+				return template.toString().replace("//", "/");
 			});
 	}
 }

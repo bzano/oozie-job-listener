@@ -35,7 +35,7 @@ public class FlowConfigTest {
 	private static final String APP_MON_KRUX = "krux";
 	private static final String TRIGRAM_DGL = "dgl";
 	private static final String IRT_KRUX = "A0384";
-	private static final String ZK_PATH_PREFIX = "/project/bddf/apps/bsy/monitoring";
+	private static final String ZK_PATH_PREFIX = "/project/bddf/apps/bsy/monitoring/";
 	private static final String JOB_NAME = "dmp_bad_krux";
 	
 	private FlowConfig flowRouter;
@@ -49,9 +49,9 @@ public class FlowConfigTest {
 	public void setup() throws IOException, InterruptedException {
 		flowRouter = new FlowConfig(ZOOKEEPER.getZookeeperConnectString(), ZK_PATH_PREFIX);
 	}
-
+	
 	@Test
-	public void getEventConfiguration_chould_return_properties_with_topic_name() {
+	public void getEventConfiguration_should_return_properties_with_topic_name() {
 		// GIVEN
 		MonitoringEvent event = new MonitoringEvent();
 		event.setJobName(JOB_NAME);
@@ -62,7 +62,7 @@ public class FlowConfigTest {
 	}
 
 	@Test
-	public void getEventConfiguration_chould_return_empty_when_project_is_not_registred() {
+	public void getEventConfiguration_should_return_empty_when_project_is_not_registred() {
 		// GIVEN
 		MonitoringEvent event = new MonitoringEvent();
 		event.setJobName("no_job_name");
