@@ -3,50 +3,44 @@ package org.monitoring.oozie.zookeeper;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.oozie.util.XLog;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
 import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.Stat;
+
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 public class FlowConfig {
 	private static final XLog LOGGER = XLog.getLog(FlowConfig.class);
 	private static final int TIME_OUT = 10 * 1000;
-	private static final long CACHE_MAX_TIME = 2 * 60 * 60 * 1000;
-	private static final int DEFAULT_MAX_MON_APPS = 100;
 
-	private long cacheStartTime;
-	private int maxMonApps;
-	private Map<String, Properties> cache;
+	private static final Cache<String, Optional<Properties>> CACHE;
+
+	static {
+		CACHE = CacheBuilder.newBuilder().expireAfterWrite(15, TimeUnit.MINUTES).maximumSize(100).build();
+	}
+
 	private String zookeeperServer;
 	private String zkPathPrefix;
 
 	public FlowConfig(String zookeeperServer, String zkPathPrefix) {
-		this(zookeeperServer, zkPathPrefix, DEFAULT_MAX_MON_APPS);
-	}
-	
-	public FlowConfig(String zookeeperServer, String zkPathPrefix, int maxMonApps) {
-		this.maxMonApps = maxMonApps;
 		this.zkPathPrefix = zkPathPrefix;
 		this.zookeeperServer = zookeeperServer;
-		loadJobsProperties();
 	}
 
 	private Optional<ZooKeeper> initZooKeeperClient() {
-		return Optional.ofNullable(zookeeperServer).map(srv -> {
+		if (zookeeperServer != null) {
 			LOGGER.info("Init zookeeper client (" + zookeeperServer + ")");
 			final CountDownLatch connectionLatch = new CountDownLatch(1);
 			try {
-				ZooKeeper zk = new ZooKeeper(srv, TIME_OUT, event -> {
+				ZooKeeper zk = new ZooKeeper(zookeeperServer, TIME_OUT, event -> {
 					if (event.getState() == KeeperState.SyncConnected) {
 						connectionLatch.countDown();
 					}
@@ -55,61 +49,43 @@ public class FlowConfig {
 				if (!zkInitiated) {
 					throw new IOException("Zk Init failed");
 				}
-				LOGGER.info("Zookeeper client Created");
-				return zk;
+				LOGGER.info("Zookeeper client created");
+				return Optional.ofNullable(zk);
 			} catch (IOException | InterruptedException e) {
 				LOGGER.error(e);
-				return null;
-			}
-		});
-	}
-
-	private void loadJobsProperties() {
-		initZooKeeperClient().map(this::loadJobsProperties).ifPresent(newCache -> {
-			cache = newCache;
-			cacheStartTime = System.currentTimeMillis();
-		});
-	}
-
-	private Map<String, Properties> loadJobsProperties(ZooKeeper zk) {
-		try {
-			return getJobsPaths(zk).orElseGet(ArrayList::new).stream().map(path -> this.getDataFromZk(zk, path))
-					.filter(Optional::isPresent).map(Optional::get)
-					.map(pair -> Pair.of(pair.getLeft(), new ByteArrayInputStream(pair.getRight())))
-					.map(pair -> Pair.of(pair.getLeft(), loadProperties(pair.getRight())))
-					.filter(pair -> pair.getRight().isPresent())
-					.map(pair -> Pair.of(pair.getLeft(), pair.getRight().get()))
-					.collect(Collectors.toMap(Pair::getLeft, Pair::getRight));
-		} finally {
-			try {
-				zk.close();
-			} catch (InterruptedException e) {
-				LOGGER.error("Error while closing zk session " + e.getMessage());
 			}
 		}
-
+		;
+		return Optional.empty();
 	}
 
-	private Optional<List<String>> getJobsPaths(ZooKeeper zk) {
+	private Optional<ZooKeeper> checkProps(ZooKeeper zk, String jobPropsPath) {
+		Stat stat = null;
 		try {
-			List<String> children = zk.getChildren(zkPathPrefix, false).stream().limit(maxMonApps)
-					.collect(Collectors.toList());
-			return Optional.ofNullable(children);
+			stat = zk.exists(jobPropsPath, false);
+			LOGGER.info("Check (" + jobPropsPath + ") " + stat);
 		} catch (KeeperException | InterruptedException e) {
-			LOGGER.error("Failed to load parent node (" + zkPathPrefix + ")");
-			return Optional.empty();
+			LOGGER.warn("Check Error (" + jobPropsPath + ")", e);
 		}
+		return Optional.ofNullable(stat).map(s -> zk);
 	}
 
 	public synchronized Optional<Properties> getEventConfiguration(String jobName) {
-		long newCacheTime = System.currentTimeMillis();
-		if (newCacheTime - cacheStartTime > CACHE_MAX_TIME) {
-			LOGGER.info("Reload cache");
-			loadJobsProperties();
+		Optional<Properties> props = CACHE.getIfPresent(jobName);
+		if(props == null) {
+			String jobPropsPath = (zkPathPrefix + "/" + jobName).replaceAll("//", "/");
+			Optional<ZooKeeper> zk = initZooKeeperClient();
+			
+			props = zk.flatMap(z -> checkProps(z, jobPropsPath))
+					.flatMap(z -> getDataFromZk(z, jobPropsPath)).map(ByteArrayInputStream::new)
+					.flatMap(this::loadProperties);
+			zk.ifPresent(this::closeZk);
+			
+			CACHE.put(jobName, props);
 		}
-		return Optional.ofNullable(cache.get(jobName));
+		return props;
 	}
-
+	
 	private Optional<Properties> loadProperties(InputStream jobStream) {
 		try {
 			Properties props = new Properties();
@@ -121,14 +97,21 @@ public class FlowConfig {
 		}
 	}
 
-	private Optional<Pair<String, byte[]>> getDataFromZk(ZooKeeper zk, String jobName) {
-		String path = (zkPathPrefix + "/" + jobName);
+	private Optional<byte[]> getDataFromZk(ZooKeeper zk, String jobPropsPath) {
 		try {
-			LOGGER.info("loading config from (" + path + ")");
-			return Optional.of(Pair.of(jobName, zk.getData(path, null, null)));
+			LOGGER.info("loading config from (" + jobPropsPath + ")");
+			return Optional.of(zk.getData(jobPropsPath, null, null));
 		} catch (KeeperException | InterruptedException e) {
-			LOGGER.error("Error while getting data from ZK (" + path + ")", e);
+			LOGGER.error("Error while getting data from ZK (" + jobPropsPath + ")", e);
 			return Optional.empty();
+		}
+	}
+	
+	private void closeZk(ZooKeeper z) {
+		try {
+			z.close();
+		} catch (InterruptedException e) {
+			LOGGER.error("Error while closing the zk connection", e);
 		}
 	}
 }

@@ -27,18 +27,20 @@ public class KafkaJobEventListener extends JobEventListener {
 		String kafkaServer = conf.get("oozie.job.listener.kafka.bootstrap.servers");
 		String zookeeperServer = conf.get("oozie.job.listener.zookeeper");
 		String zkPathPrefix = conf.get("oozie.job.listener.zookeeper.path.prefix");
-		LOGGER.info("init kafka job listener (" + kafkaServer + " / " + zookeeperServer + " / " + zkPathPrefix + ")");
+		LOGGER.info("Init kafka job listener (" + kafkaServer + " / " + zookeeperServer + " / " + zkPathPrefix + ")");
 		kafkaProducer = new KafkaEventProducer(kafkaServer, zookeeperServer, zkPathPrefix);
 	}
 
 	@Override
 	public void destroy() {
-		LOGGER.info("destroy kafka");
+		LOGGER.info("destroyed");
 	}
 
 	@Override
 	public void onWorkflowJobEvent(WorkflowJobEvent wje) {
-		LOGGER.info("onWorkflowJobEvent kafka");
+		if(LOGGER.isDebugEnabled()) {
+			LOGGER.debug("onWorkflowJobEvent to kafka");
+		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(wje);
 		event.ifPresent(kafkaProducer::sendEvent);
 	}
@@ -70,28 +72,36 @@ public class KafkaJobEventListener extends JobEventListener {
 
 	@Override
 	public void onWorkflowActionEvent(WorkflowActionEvent wae) {
-		LOGGER.info("onWorkflowActionEvent kafka");
+		if(LOGGER.isDebugEnabled()) {
+			LOGGER.debug("onWorkflowActionEvent to kafka");
+		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(wae);
 		event.ifPresent(kafkaProducer::sendEvent);
 	}
 
 	@Override
 	public void onCoordinatorJobEvent(CoordinatorJobEvent cje) {
-		LOGGER.info("onCoordinatorJobEvent kafka");
+		if(LOGGER.isDebugEnabled()) {
+			LOGGER.debug("onCoordinatorJobEvent to kafka");
+		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(cje);
 		event.ifPresent(kafkaProducer::sendEvent);
 	}
 
 	@Override
 	public void onCoordinatorActionEvent(CoordinatorActionEvent cae) {
-		LOGGER.info("onCoordinatorActionEvent kafka");
+		if(LOGGER.isDebugEnabled()) {
+			LOGGER.debug("onCoordinatorActionEvent to kafka");
+		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(cae);
 		event.ifPresent(kafkaProducer::sendEvent);
 	}
 
 	@Override
 	public void onBundleJobEvent(BundleJobEvent bje) {
-		LOGGER.info("onBundleJobEvent kafka");
+		if(LOGGER.isDebugEnabled()) {
+			LOGGER.debug("onBundleJobEvent to kafka");
+		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(bje);
 		event.ifPresent(kafkaProducer::sendEvent);
 	}
