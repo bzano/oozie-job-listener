@@ -22,13 +22,20 @@ public class FlowConfig {
 	private static final XLog LOGGER = XLog.getLog(FlowConfig.class);
 	private static final int TIME_OUT = 10 * 1000;
 	private static final long CACHE_MAX_TIME = 2 * 60 * 60 * 1000;
-	
+	private static final int DEFAULT_MAX_MON_APPS = 100;
+
 	private long cacheStartTime;
+	private int maxMonApps;
 	private Map<String, Properties> cache;
 	private String zookeeperServer;
 	private String zkPathPrefix;
 
 	public FlowConfig(String zookeeperServer, String zkPathPrefix) {
+		this(zookeeperServer, zkPathPrefix, DEFAULT_MAX_MON_APPS);
+	}
+	
+	public FlowConfig(String zookeeperServer, String zkPathPrefix, int maxMonApps) {
+		this.maxMonApps = maxMonApps;
 		this.zkPathPrefix = zkPathPrefix;
 		this.zookeeperServer = zookeeperServer;
 		loadJobsProperties();
@@ -85,7 +92,8 @@ public class FlowConfig {
 
 	private Optional<List<String>> getJobsPaths(ZooKeeper zk) {
 		try {
-			List<String> children = zk.getChildren(zkPathPrefix, false);
+			List<String> children = zk.getChildren(zkPathPrefix, false).stream().limit(maxMonApps)
+					.collect(Collectors.toList());
 			return Optional.ofNullable(children);
 		} catch (KeeperException | InterruptedException e) {
 			LOGGER.error("Failed to load parent node (" + zkPathPrefix + ")");
@@ -95,7 +103,7 @@ public class FlowConfig {
 
 	public synchronized Optional<Properties> getEventConfiguration(String jobName) {
 		long newCacheTime = System.currentTimeMillis();
-		if(newCacheTime - cacheStartTime > CACHE_MAX_TIME) {
+		if (newCacheTime - cacheStartTime > CACHE_MAX_TIME) {
 			LOGGER.info("Reload cache");
 			loadJobsProperties();
 		}
