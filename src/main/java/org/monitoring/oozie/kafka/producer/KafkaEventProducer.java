@@ -42,7 +42,7 @@ public class KafkaEventProducer {
 	private static final Cache<String, KafkaProducer<String, String>> CACHE;
 
 	static {
-		CACHE = CacheBuilder.newBuilder().expireAfterWrite(15, TimeUnit.MINUTES).removalListener(
+		CACHE = CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).removalListener(
 				(RemovalListener<String, KafkaProducer<String, String>>) notification -> notification.getValue().close())
 				.maximumSize(100)
 				.build();

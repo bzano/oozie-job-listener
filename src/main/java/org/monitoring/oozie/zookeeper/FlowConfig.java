@@ -24,7 +24,7 @@ public class FlowConfig {
 	private static final Cache<String, Optional<Properties>> CACHE;
 
 	static {
-		CACHE = CacheBuilder.newBuilder().expireAfterWrite(15, TimeUnit.MINUTES).maximumSize(100).build();
+		CACHE = CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).maximumSize(100).build();
 	}
 
 	private String zookeeperServer;
@@ -72,20 +72,19 @@ public class FlowConfig {
 
 	public synchronized Optional<Properties> getEventConfiguration(String jobName) {
 		Optional<Properties> props = CACHE.getIfPresent(jobName);
-		if(props == null) {
+		if (props == null) {
 			String jobPropsPath = (zkPathPrefix + "/" + jobName).replaceAll("//", "/");
 			Optional<ZooKeeper> zk = initZooKeeperClient();
-			
-			props = zk.flatMap(z -> checkProps(z, jobPropsPath))
-					.flatMap(z -> getDataFromZk(z, jobPropsPath)).map(ByteArrayInputStream::new)
-					.flatMap(this::loadProperties);
+
+			props = zk.flatMap(z -> checkProps(z, jobPropsPath)).flatMap(z -> getDataFromZk(z, jobPropsPath))
+					.map(ByteArrayInputStream::new).flatMap(this::loadProperties);
 			zk.ifPresent(this::closeZk);
-			
+
 			CACHE.put(jobName, props);
 		}
 		return props;
 	}
-	
+
 	private Optional<Properties> loadProperties(InputStream jobStream) {
 		try {
 			Properties props = new Properties();
@@ -106,7 +105,7 @@ public class FlowConfig {
 			return Optional.empty();
 		}
 	}
-	
+
 	private void closeZk(ZooKeeper z) {
 		try {
 			z.close();

@@ -38,7 +38,7 @@ public class KafkaJobEventListener extends JobEventListener {
 
 	@Override
 	public void onWorkflowJobEvent(WorkflowJobEvent wje) {
-		if(LOGGER.isDebugEnabled()) {
+		if (LOGGER.isDebugEnabled()) {
 			LOGGER.debug("onWorkflowJobEvent to kafka");
 		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(wje);
@@ -72,7 +72,7 @@ public class KafkaJobEventListener extends JobEventListener {
 
 	@Override
 	public void onWorkflowActionEvent(WorkflowActionEvent wae) {
-		if(LOGGER.isDebugEnabled()) {
+		if (LOGGER.isDebugEnabled()) {
 			LOGGER.debug("onWorkflowActionEvent to kafka");
 		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(wae);
@@ -81,7 +81,7 @@ public class KafkaJobEventListener extends JobEventListener {
 
 	@Override
 	public void onCoordinatorJobEvent(CoordinatorJobEvent cje) {
-		if(LOGGER.isDebugEnabled()) {
+		if (LOGGER.isDebugEnabled()) {
 			LOGGER.debug("onCoordinatorJobEvent to kafka");
 		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(cje);
@@ -90,7 +90,7 @@ public class KafkaJobEventListener extends JobEventListener {
 
 	@Override
 	public void onCoordinatorActionEvent(CoordinatorActionEvent cae) {
-		if(LOGGER.isDebugEnabled()) {
+		if (LOGGER.isDebugEnabled()) {
 			LOGGER.debug("onCoordinatorActionEvent to kafka");
 		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(cae);
@@ -99,7 +99,7 @@ public class KafkaJobEventListener extends JobEventListener {
 
 	@Override
 	public void onBundleJobEvent(BundleJobEvent bje) {
-		if(LOGGER.isDebugEnabled()) {
+		if (LOGGER.isDebugEnabled()) {
 			LOGGER.debug("onBundleJobEvent to kafka");
 		}
 		Optional<MonitoringEvent> event = jobEventToMonitoringEvent(bje);
