@@ -50,12 +50,11 @@ public class FlowConfig {
 					throw new IOException("Zk Init failed");
 				}
 				LOGGER.info("Zookeeper client created");
-				return Optional.ofNullable(zk);
+				return Optional.of(zk);
 			} catch (IOException | InterruptedException e) {
 				LOGGER.error(e);
 			}
 		}
-		;
 		return Optional.empty();
 	}
 

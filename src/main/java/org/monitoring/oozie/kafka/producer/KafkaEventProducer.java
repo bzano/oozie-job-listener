@@ -42,10 +42,10 @@ public class KafkaEventProducer {
 	private static final Cache<String, KafkaProducer<String, String>> CACHE;
 
 	static {
-		CACHE = CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).removalListener(
-				(RemovalListener<String, KafkaProducer<String, String>>) notification -> notification.getValue().close())
-				.maximumSize(100)
-				.build();
+		CACHE = CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES)
+				.removalListener((RemovalListener<String, KafkaProducer<String, String>>) notification -> notification
+						.getValue().close())
+				.maximumSize(100).build();
 	}
 
 	private FlowConfig flowConfig;
@@ -96,8 +96,8 @@ public class KafkaEventProducer {
 
 	public void sendEvent(MonitoringEvent event) {
 		flowConfig.getEventConfiguration(event.getJobName()).flatMap(props -> eventToRecord(event, props))
-				.flatMap(record -> produceToKafka(event.getJobName(), record)).flatMap(f -> getMetadata(f, event.getJobName()))
-				.ifPresent(meta -> {
+				.flatMap(record -> produceToKafka(event.getJobName(), record))
+				.flatMap(f -> getMetadata(f, event.getJobName())).ifPresent(meta -> {
 					if (LOGGER.isDebugEnabled()) {
 						LOGGER.debug("Event sent to : " + meta.toString());
 					}
@@ -115,10 +115,10 @@ public class KafkaEventProducer {
 			log.put("date", ISO_DATE_FORMAT.format(System.currentTimeMillis()));
 
 			String jsonEvent = MAPPER.toJson(log);
-			if(LOGGER.isDebugEnabled()) {
+			if (LOGGER.isDebugEnabled()) {
 				LOGGER.debug("EVENT TO SEND [" + jsonEvent + "]");
 			}
-			return Optional.of(new ProducerRecord<String, String>(topic, jsonEvent));
+			return Optional.of(new ProducerRecord<>(topic, jsonEvent));
 		}
 		LOGGER.warn("No topic is defined for job (" + event.getJobName() + ") " + props.toString());
 		return Optional.empty();
@@ -126,9 +126,8 @@ public class KafkaEventProducer {
 
 	private MonitoringEvent updateEventConfig(MonitoringEvent event, Properties jobConfig) {
 		Map<String, Object> eventProps = jobConfig.keySet().stream().map(Object::toString)
-				.filter(key -> key.indexOf(EVENT_CONFIG_PREFIX) == 0)
-				.collect(Collectors.toMap(key -> key.toLowerCase().replace(EVENT_CONFIG_PREFIX, StringUtils.EMPTY),
-						key -> jobConfig.get(key)));
+				.filter(key -> key.indexOf(EVENT_CONFIG_PREFIX) == 0).collect(Collectors.toMap(
+						key -> key.toLowerCase().replace(EVENT_CONFIG_PREFIX, StringUtils.EMPTY), jobConfig::get));
 
 		Arrays.stream(event.getClass().getDeclaredFields()).map(f -> Pair.of(f, getFieldName(f)))
 				.filter(t -> eventProps.get(t.getRight()) != null)
@@ -158,11 +157,12 @@ public class KafkaEventProducer {
 	private Optional<Future<RecordMetadata>> produceToKafka(String jobName, ProducerRecord<String, String> record) {
 		return getKafkaProducer(jobName).flatMap(p -> send(p, record));
 	}
-	
-	private Optional<Future<RecordMetadata>> send(KafkaProducer<String, String> producer, ProducerRecord<String, String> record) {
+
+	private Optional<Future<RecordMetadata>> send(KafkaProducer<String, String> producer,
+			ProducerRecord<String, String> record) {
 		try {
 			return Optional.ofNullable(producer.send(record));
-		}catch(KafkaException te) {
+		} catch (KafkaException te) {
 			LOGGER.error("Kafka error " + te.getMessage());
 			return Optional.empty();
 		}
